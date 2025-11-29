@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gradient Descent Playground</title>
+  <script src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
+  <style>
+    :root{--bg:#0f1115;--panel:#17181b;--accent:#e53935;--muted:#9aa0a6;--text:#ffffff}
+    .light{--bg:#ffffff;--panel:#e9e9e9;--accent:#e53935;--muted:#555;--text:#000000}
+
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text)}
+
+    /* layout */
+    .app{display:flex;height:100vh;gap:18px;padding:16px;box-sizing:border-box}
+    .sidebar{width:320px;background:linear-gradient(180deg,var(--panel),#151618);border-radius:10px;padding:16px;box-sizing:border-box;overflow:auto;flex-shrink:0}
+    .sidebar.collapsed{display:none}
+    h2{margin:0 0 10px;font-size:18px}
+    .control{margin-bottom:12px}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input[type=range]{width:100%}
+    .row{display:flex;gap:8px}
+    input[type=text],select,input[type=number],textarea{width:100%;padding:8px;border-radius:6px;border:1px solid #222;background:#0b0c0d;color:var(--text);box-sizing:border-box}
+    button{background:var(--accent);border:none;padding:10px 12px;border-radius:8px;color:#fff;cursor:pointer}
+    button.ghost{background:transparent;border:1px solid #2a2b2d}
+    .main{flex:1;display:flex;flex-direction:column;min-width:0}
+    #plot{flex:1;border-radius:10px;background:transparent;min-height:320px}
+    .metrics{height:90px;background:linear-gradient(180deg,#0b0b0c,#0f1012);margin-top:12px;border-radius:10px;padding:12px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+    .metric{flex:1;min-width:120px}
+    .small{font-size:12px;color:var(--muted)}
+    .value{font-weight:700;font-size:18px}
+    .footer-note{font-size:12px;color:var(--muted);margin-top:8px}
+    .controls-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    textarea{height:80px;font-family:monospace}
+
+    /* responsive behaviors */
+    #themeToggle{width:100%;margin-bottom:10px}
+    #sidebarToggle{display:none;position:fixed;left:12px;top:12px;z-index:9999}
+
+    @media (max-width: 900px){
+      .app{flex-direction:column;padding:12px}
+      .sidebar{width:100%;height:auto;max-height:40vh;border-radius:8px;overflow:auto}
+      .sidebar.collapsed{display:none}
+      .main{width:100%}
+      .metrics{height:auto}
+      #sidebarToggle{display:block}
+      #plot{min-height:360px}
+    }
+
+    @media (max-width: 520px){
+      .controls-grid{grid-template-columns:1fr}
+      .row{flex-direction:column}
+      .metrics{padding:10px;gap:10px}
+      .value{font-size:16px}
+      #plot{min-height:300px}
+    }
+
+    /* light-mode input styling */
+    .light input[type=text], .light select, .light input[type=number], .light textarea{background:#fff;color:var(--text);border:1px solid #ccc}
+    .light .sidebar{background:linear-gradient(180deg,var(--panel),#e6e6e6)}
+  </style>
+</head>
+<body>
+  <button id="sidebarToggle" class="ghost">☰ Controls</button>
+  <div class="app">
+    <div class="sidebar" id="sidebar">
+      <h2>Controls</h2>
+      <button id="themeToggle" class="ghost">Toggle Theme</button>
+      <div class="control">
+        <label>Dimension</label>
+        <select id="dimSelect">
+          <option value="2">2D (surface)</option>
+          <option value="1">1D (line)</option>
+        </select>
+      </div>
+
+      <div class="control">
+        <label>Function</label>
+        <select id="funcSelect">
+          <option value="bowl">Bowl ( (x-1)^2 + (y+1)^2 )</option>
+          <option value="saddle">Saddle (x^2 - y^2)</option>
+          <option value="beale">Beale</option>
+          <option value="rosen">Rosenbrock</option>
+          <option value="himmelblau">Himmelblau</option>
+          <option value="custom">Custom (JS)</option>
+        </select>
+      </div>
+
+      <div class="control" id="customBox" style="display:none">
+        <label>Custom 2D function z = f(x,y)</label>
+        <textarea id="customFn">(x,y) =&gt; Math.pow(x-1,2)+Math.pow(y+1,2)</textarea>
+        <div class="small">Write a JS arrow function of (x,y). Example: (x,y) =&gt; Math.sin(x)*Math.cos(y)</div>
+      </div>
+
+      <div class="control">
+        <label>Optimizer</label>
+        <select id="optSelect">
+          <option value="sgd">SGD</option>
+          <option value="momentum">SGD + Momentum</option>
+          <option value="adam">Adam</option>
+        </select>
+      </div>
+
+      <div class="controls-grid">
+        <div class="control">
+          <label>Starting x</label>
+          <input id="startX" type="number" step="0.1" value="3" />
+        </div>
+        <div class="control">
+          <label>Starting y</label>
+          <input id="startY" type="number" step="0.1" value="-8" />
+        </div>
+      </div>
+
+      <div class="controls-grid">
+        <div class="control">
+          <label>Learning rate (α)</label>
+          <input id="lr" type="number" step="0.001" value="0.05" />
+        </div>
+        <div class="control">
+          <label>Momentum (β) [momentum only]</label>
+          <input id="momentum" type="number" step="0.01" value="0.9" />
+        </div>
+      </div>
+
+      <div class="control">
+        <label>Number of steps</label>
+        <input id="steps" type="range" min="1" max="200" value="100" />
+        <div class="small"><span id="stepsVal">100</span> steps</div>
+      </div>
+
+      <div class="control">
+        <label>Show options</label>
+        <div class="row">
+          <label style="display:flex;align-items:center;gap:8px"><input id="showContour" type="checkbox" checked/> Contour</label>
+          <label style="display:flex;align-items:center;gap:8px"><input id="showGrad" type="checkbox" checked/> Gradient</label>
+        </div>
+      </div>
+
+      <div class="control">
+        <label>Plot range (±)</label>
+        <input id="range" type="range" min="1" max="10" value="6" />
+        <div class="small"><span id="rangeVal">6</span></div>
+      </div>
+
+      <div class="control row" style="margin-top:8px">
+        <button id="runBtn">Run Optimization</button>
+        <button class="ghost" id="resetBtn">Reset</button>
+      </div>
+
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button id="playPause">Play</button>
+        <button class="ghost" id="stepBtn">Step</button>
+        <button class="ghost" id="clearTrail">Clear Trail</button>
+      </div>
+
+      <div class="footer-note">Tip: switch to Rosenbrock and compare SGD vs Adam to see differences in convergence.</div>
+    </div>
+
+    <div class="main">
+      <div id="plot"></div>
+      <div class="metrics" id="metrics">
+        <div class="metric"><div class="small">Step</div><div id="mStep" class="value">0</div></div>
+        <div class="metric"><div class="small">Loss z</div><div id="mLoss" class="value">0</div></div>
+        <div class="metric"><div class="small">Position</div><div id="mPos" class="value">(0,0)</div></div>
+        <div class="metric"><div class="small">Optimizer</div><div id="mOpt" class="value">SGD</div></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // --- utils: functions and gradients ---
+  const FUNCS = {
+    bowl: {
+      f: (x,y)=>Math.pow(x-1,2)+Math.pow(y+1,2),
+      grad: (x,y)=>[2*(x-1),2*(y+1)]
+    },
+    saddle: {
+      f: (x,y)=>x*x - y*y,
+      grad: (x,y)=>[2*x, -2*y]
+    },
+    beale: {
+      // Beale function (commonly used)
+      f: (x,y)=>{
+        return Math.pow(1.5 - x + x*y,2) + Math.pow(2.25 - x + x*y*y,2) + Math.pow(2.625 - x + x*y*y*y,2);
+      },
+      grad: (x,y)=>{
+        // numerical grad (safe)
+        const h=1e-6;
+        const gx = (FUNCS.beale.f(x+h,y)-FUNCS.beale.f(x-h,y))/(2*h);
+        const gy = (FUNCS.beale.f(x,y+h)-FUNCS.beale.f(x,y-h))/(2*h);
+        return [gx,gy];
+      }
+    },
+    rosen: {
+      // Rosenbrock (classic banana)
+      f: (x,y)=>100*Math.pow(y - x*x,2) + Math.pow(1-x,2),
+      grad: (x,y)=>{
+        const dx = -400*x*(y-x*x) - 2*(1-x);
+        const dy = 200*(y-x*x);
+        return [dx,dy];
+      }
+    },
+    himmelblau: {
+      f: (x,y)=>Math.pow(x*x + y -11,2) + Math.pow(x + y*y -7,2),
+      grad: (x,y)=>{
+        const dx = 4*x*(x*x + y -11) + 2*(x + y*y -7);
+        const dy = 2*(x*x + y -11) + 4*y*(x + y*y -7);
+        return [dx,dy];
+      }
+    }
+  };
+
+  // DOM refs
+  const dimSelect=document.getElementById('dimSelect');
+  const funcSelect=document.getElementById('funcSelect');
+  const customBox=document.getElementById('customBox');
+  const customFn=document.getElementById('customFn');
+  const optSelect=document.getElementById('optSelect');
+  const startX=document.getElementById('startX');
+  const startY=document.getElementById('startY');
+  const lrIn=document.getElementById('lr');
+  const momentumIn=document.getElementById('momentum');
+  const stepsIn=document.getElementById('steps');
+  const stepsVal=document.getElementById('stepsVal');
+  const runBtn=document.getElementById('runBtn');
+  const resetBtn=document.getElementById('resetBtn');
+  const plotDiv=document.getElementById('plot');
+  const mStep=document.getElementById('mStep');
+  const mLoss=document.getElementById('mLoss');
+  const mPos=document.getElementById('mPos');
+  const mOpt=document.getElementById('mOpt');
+  const showContour=document.getElementById('showContour');
+  const showGrad=document.getElementById('showGrad');
+  const rangeIn=document.getElementById('range');
+  const rangeVal=document.getElementById('rangeVal');
+  const playPause=document.getElementById('playPause');
+  const stepBtn=document.getElementById('stepBtn');
+  const clearTrail=document.getElementById('clearTrail');
+  const themeToggle=document.getElementById('themeToggle');
+  const sidebar=document.getElementById('sidebar');
+  const sidebarToggle=document.getElementById('sidebarToggle');
+
+  stepsIn.addEventListener('input',()=>stepsVal.textContent=stepsIn.value);
+  rangeIn.addEventListener('input',()=>rangeVal.textContent=rangeIn.value);
+  funcSelect.addEventListener('change',()=>{ customBox.style.display = funcSelect.value==='custom'?'block':'none'; });
+
+  // state
+  let state={
+    funcKey:'bowl',
+    customFunc:null,
+    opt:'sgd',
+    x:parseFloat(startX.value),
+    y:parseFloat(startY.value),
+    lr:parseFloat(lrIn.value),
+    momentum:parseFloat(momentumIn.value),
+    steps:parseInt(stepsIn.value),
+    range:parseFloat(rangeIn.value),
+    showContour:true,
+    showGrad:true,
+    dim:2
+  };
+
+  // plot elements
+  let surfaceTrace, contourTrace, pointTrace, trailTrace, gradTrace;
+  let surfaceData, contourData;
+
+  function getFunc(){
+    if(funcSelect.value==='custom'){
+      try{ const fn = eval(customFn.value); if(typeof fn==='function') return {f:fn, grad: numericalGrad(fn)}; }
+      catch(e){console.warn('Bad custom function',e)}
+    }
+    return FUNCS[funcSelect.value];
+  }
+
+  function numericalGrad(fn){
+    return (x,y)=>{
+      const h=1e-6;
+      const gx = (fn(x+h,y)-fn(x-h,y))/(2*h);
+      const gy = (fn(x,y+h)-fn(x,y-h))/(2*h);
+      return [gx,gy];
+    }
+  }
+
+  function buildGrid(range, n=80){
+    const xs = []; const ys = [];
+    for(let i=0;i<n;i++) xs.push(-range + 2*range*(i/(n-1)));
+    for(let j=0;j<n;j++) ys.push(-range + 2*range*(j/(n-1)));
+    const z = Array(xs.length).fill().map(()=>Array(ys.length).fill(0));
+    const fn=getFunc();
+    for(let i=0;i<xs.length;i++) for(let j=0;j<ys.length;j++){ z[j][i] = fn.f(xs[i], ys[j]); }
+    return {xs,ys,z};
+  }
+
+  // -- new helper: updateMetrics (fixes ReferenceError) --
+  function updateMetrics(){
+    try{
+      const fn = getFunc();
+      const z = (typeof state.x === 'number' && typeof state.y === 'number') ? fn.f(state.x, state.y) : 0;
+      mStep.textContent = currentStep || 0;
+      mLoss.textContent = (typeof z === 'number' && isFinite(z)) ? z.toFixed(5) : 'NaN';
+      mPos.textContent = `(${(state.x||0).toFixed(4)}, ${(state.y||0).toFixed(4)})`;
+      mOpt.textContent = (optSelect.value || 'SGD').toUpperCase();
+    }catch(e){ console.warn('updateMetrics error',e); }
+  }
+
+  function initPlot(){
+    const R=state.range;
+    const grid = buildGrid(R,80);
+    surfaceTrace = {
+      x:grid.xs, y:grid.ys, z:grid.z, type:'surface', showscale:false, opacity:0.9,
+      colorscale:'Viridis', contours:{z:{show:false}}, hoverinfo:'none'
+    };
+
+    contourTrace = {
+      x:grid.xs, y:grid.ys, z:grid.z, type:'contour', showscale:false, contours:{coloring:'lines'}, opacity:0.7
+    };
+
+    pointTrace = {x:[state.x], y:[state.y], z:[getFunc().f(state.x,state.y)], mode:'markers', marker:{color:'white',size:6}, type:'scatter3d', name:'current'};
+
+    trailTrace = {x:[],y:[],z:[],mode:'markers',marker:{size:4,opacity:0.8},type:'scatter3d',name:'trail'};
+
+    gradTrace = {x:[],y:[],z:[],mode:'lines',line:{color:'red',width:4},type:'scatter3d',name:'grad'};
+
+    surfaceData = [surfaceTrace, ...(state.showContour? [contourTrace]:[]), trailTrace, gradTrace, pointTrace];
+
+    const layout = {paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',
+      scene:{bgcolor:'rgba(0,0,0,0)',xaxis:{title:'x'},yaxis:{title:'y'},zaxis:{title:'z'},camera:{eye:{x:1.5,y:1.5,z:1}}},margin:{t:10,b:10,l:10,r:10}
+    };
+
+    Plotly.newPlot(plotDiv, surfaceData, layout, {responsive:true});
+    updateMetrics();
+  }
+
+  function switchTo1D(){
+    // render a 2D line of f(x) where y is fixed (from startY)
+    const range=state.range; const n=400; const xs=[]; const ys=[];
+    const fn=getFunc();
+    for(let i=0;i<n;i++){ const x=-range+2*range*(i/(n-1)); xs.push(x); ys.push(fn.f(x, parseFloat(startY.value))); }
+    const line = {x:xs,y:ys,type:'scatter',mode:'lines'};
+    const point = {x:[state.x],y:[fn.f(state.x,parseFloat(startY.value))],mode:'markers',marker:{size:8}};
+    Plotly.newPlot(plotDiv,[line,point],{paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)',margin:{t:20}});
+    updateMetrics();
+  }
+
+  // optimizer implementations
+  function makeOptimizer(kind, lr, momentum=0.9){
+    if(kind==='sgd'){
+      return {
+        step: (x,y,grad)=> [x - lr*grad[0], y - lr*grad[1]],
+        reset: ()=>{}
+      }
+    }
+    if(kind==='momentum'){
+      let vx=0, vy=0;
+      return {
+        step: (x,y,grad)=>{
+          vx = momentum*vx + lr*grad[0];
+          vy = momentum*vy + lr*grad[1];
+          return [x - vx, y - vy];
+        }, reset: ()=>{vx=0;vy=0}
+      }
+    }
+    if(kind==='adam'){
+      let m1=0,m2=0,v1=0,v2=0,t=0; const b1=0.9,b2=0.999,eps=1e-8;
+      return {
+        step:(x,y,grad)=>{
+          t++; m1 = b1*m1 + (1-b1)*grad[0]; m2 = b1*m2 + (1-b1)*grad[1];
+          v1 = b2*v1 + (1-b2)*grad[0]*grad[0]; v2 = b2*v2 + (1-b2)*grad[1]*grad[1];
+          const m1hat = m1/(1-Math.pow(b1,t)); const m2hat = m2/(1-Math.pow(b1,t));
+          const v1hat = v1/(1-Math.pow(b2,t)); const v2hat = v2/(1-Math.pow(b2,t));
+          const dx = lr * m1hat / (Math.sqrt(v1hat)+eps); const dy = lr * m2hat / (Math.sqrt(v2hat)+eps);
+          return [x - dx, y - dy];
+        }, reset: ()=>{m1=0;m2=0;v1=0;v2=0;t=0}
+      }
+    }
+  }
+
+  // animation logic
+  let anim=null; let currentStep=0; let path=[];
+  function runOptimization(){
+    // init state
+    state.x = parseFloat(startX.value); state.y = parseFloat(startY.value);
+    state.lr = parseFloat(lrIn.value); state.momentum = parseFloat(momentumIn.value);
+    state.steps = parseInt(stepsIn.value); state.range = parseFloat(rangeIn.value);
+    state.showContour = showContour.checked; state.showGrad = showGrad.checked; state.dim = parseInt(dimSelect.value);
+
+    mOpt.textContent = optSelect.value.toUpperCase();
+
+    const fn = getFunc();
+    const opt = makeOptimizer(optSelect.value, state.lr, state.momentum);
+    opt.reset();
+    currentStep=0; path=[];
+
+    // prepare plot
+    if(state.dim===1){ switchTo1D(); }
+    else{ initPlot(); }
+
+    // prepare trail and point
+    updatePointAndTrail();
+
+    // stop any existing anim
+    if(anim) cancelAnimationFrame(anim);
+    let playing=true;
+    playPause.textContent='Pause';
+
+    function stepOnce(){
+      if(currentStep>=state.steps){ playPause.textContent='Play'; return; }
+      // gradient
+      const grad = fn.grad(state.x, state.y);
+      // negative gradient is descent direction
+      const newxy = opt.step(state.x, state.y, grad.map(v=>v));
+      const prev=[state.x,state.y]; state.x=newxy[0]; state.y=newxy[1];
+      currentStep++;
+      path.push({x:state.x,y:state.y,z:fn.f(state.x,state.y)});
+      updatePointAndTrail(grad, prev);
+      if(playing) anim = requestAnimationFrame(stepOnce);
+    }
+
+    // play/pause handler
+    playPause.onclick = ()=>{ if(playPause.textContent==='Play'){ playPause.textContent='Pause'; anim=requestAnimationFrame(stepOnce);} else { playPause.textContent='Play'; playing=false; if(anim) cancelAnimationFrame(anim); }};
+
+    // step button
+    stepBtn.onclick = ()=>{ stepOnce(); };
+
+    // run initial continuous animation
+    anim = requestAnimationFrame(stepOnce);
+  }
+
+  function updatePointAndTrail(grad=null, prev=null){
+    const fn=getFunc();
+    const z = fn.f(state.x,state.y);
+    mStep.textContent = currentStep;
+    mLoss.textContent = z.toFixed(5);
+    mPos.textContent = `(${state.x.toFixed(4)}, ${state.y.toFixed(4)})`;
+
+    if(state.dim===1){ // update 1D point
+      Plotly.restyle(plotDiv, {x:[[state.x]], y:[[z]]}, 1);
+      return;
+    }
+
+    // add to trail
+    trailTrace.x.push(state.x); trailTrace.y.push(state.y); trailTrace.z.push(z);
+    // fade points in trail by adjusting opacity array (Plotly scatter3d doesn't accept per-point opacity easily) -> rebuild marker sizes
+    const n = trailTrace.x.length;
+    const sizes = new Array(n).fill(4).map((s,i)=>4); // keep sizes static (could vary)
+
+    // grad vector line
+    if(grad && state.showGrad){
+      const nx = state.x; const ny = state.y; const gz = z;
+      const len = Math.sqrt(grad[0]*grad[0]+grad[1]*grad[1]) + 1e-9;
+      const scale = (state.range/6) * 0.6; // visual scale
+      const gx = nx - (grad[0]/len)*scale; const gy = ny - (grad[1]/len)*scale; const gz2 = fn.f(gx,gy);
+      gradTrace.x = [gx, nx]; gradTrace.y=[gy, ny]; gradTrace.z=[gz2, gz];
+    } else { gradTrace.x=[]; gradTrace.y=[]; gradTrace.z=[]; }
+
+    pointTrace.x=[state.x]; pointTrace.y=[state.y]; pointTrace.z=[z];
+
+    // apply to plot
+    const data = [surfaceTrace, ...(state.showContour? [contourTrace]:[]), trailTrace, gradTrace, pointTrace];
+    Plotly.react(plotDiv, data, plotDiv.layout, {displayModeBar:false});
+    updateMetrics();
+  }
+
+  // UI wiring
+  runBtn.addEventListener('click', ()=>{ runOptimization(); });
+  resetBtn.addEventListener('click', ()=>{ if(anim) cancelAnimationFrame(anim); state.x=parseFloat(startX.value); state.y=parseFloat(startY.value); currentStep=0; trailTrace.x=[]; trailTrace.y=[]; trailTrace.z=[]; gradTrace.x=[]; gradTrace.y=[]; gradTrace.z=[]; initPlot(); });
+  clearTrail.addEventListener('click', ()=>{ trailTrace.x=[]; trailTrace.y=[]; trailTrace.z=[]; Plotly.restyle(plotDiv,{x:[surfaceTrace.x, contourTrace.x, trailTrace.x, gradTrace.x, pointTrace.x], y:[surfaceTrace.y, contourTrace.y, trailTrace.y, gradTrace.y, pointTrace.y], z:[surfaceTrace.z, contourTrace.z, trailTrace.z, gradTrace.z, pointTrace.z]}); updateMetrics(); });
+
+  // theme toggle
+  themeToggle.onclick = ()=>{ document.body.classList.toggle('light'); Plotly.Plots.resize(plotDiv); };
+  // sidebar toggle for small screens
+  sidebarToggle.onclick = ()=>{ sidebar.classList.toggle('collapsed'); };
+
+  // initial
+  initPlot();
+
+  // detect window resize
+  window.addEventListener('resize', ()=>Plotly.Plots.resize(plotDiv));
+  </script>
+</body>
+</html>
